@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spotify A-B Repeat Player</title>
+    <!-- Custom Range Slider CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sdthornton/slider.css/slider.min.css">
     <style>
         body {
             background-color: #1DB954;
@@ -16,32 +18,88 @@
             height: 100vh;
             margin: 0;
         }
-        h1 {
-            font-size: 2rem;
-        }
         .container {
             background-color: #191414;
-            padding: 20px;
+            padding: 10px;
             border-radius: 8px;
-            width: 300px;
+            width: 1500px;
             text-align: center;
         }
-        input[type="number"] {
-            width: 80%;
-            padding: 5px;
-            margin: 10px 0;
-            border: none;
+        .slider-container {
+            margin: 50px 0;
+            width: 100%;
+        }
+        .slider {
+            width: 100%;
+            height: 120px; /* Increase height for larger slider */
+            background: #3A3A3A;
+            position: relative;
+            border-radius: 8px;
+        }
+        .slider .range {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #1DB954;
+            border-radius: 8px;
+        }
+        .slider .handle {
+            position: absolute;
+            top: 0;
+            width: 10px; /* Handle width */
+            height: 120px; /* Handle height */
+            background-color: #FFF;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            transition: background-color 0.2s;
+        }
+        .slider .handle:hover {
+            background-color: #1AA34A;
+        }
+        .tooltip {
+            position: absolute;
+            top: -25px;
+            width: 40px;
+            text-align: center;
+            font-size: 14px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #FFF;
+            padding: 4px;
             border-radius: 4px;
+            visibility: visible; /* Make tooltip visible */
+        }
+        .tooltip-left {
+            left: -50%; /* Position tooltip to the left of the handle */
+        }
+        .tooltip-right {
+            right: -50%; /* Position tooltip to the right of the handle */
+        }
+        .time-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            color: #FFF;
+            font-size: 1.25rem; /* Larger font for time labels */
+            margin-top: 10px;
+        }
+        .button-container {
+            margin-top: 20px;
         }
         button {
-            background-color: #1DB954;
+            font-size: 1.1rem;
+            margin: 5px;
+            padding: 8px 16px;
             border: none;
-            padding: 10px 20px;
-            color: white;
-            font-size: 1rem;
-            cursor: pointer;
             border-radius: 4px;
-            margin: 5px 0;
+            color: #FFF;
+            background-color: #1DB954;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #1AA34A;
         }
     </style>
 </head>
@@ -50,61 +108,163 @@
         <h1>Spotify A-B Repeat Player</h1>
         <p>Track: <span id="track-name">Loading...</span></p>
         <p>Duration: <span id="track-duration">0</span> seconds</p>
-        <label>Start Time (A):</label>
-        <input type="number" id="start-time" min="0" step="1">
-        <label>End Time (B):</label>
-        <input type="number" id="end-time" min="0" step="1">
-        <button onclick="setABLoop()">Start A-B Loop</button>
-        <button onclick="stopABLoop()">Stop Repeat</button>
-        <button onclick="resetAB()">Reset</button> <!-- New Reset Button -->
+
+        <!-- Range Slider -->
+        <div class="slider-container">
+            <div class="slider" id="slider">
+                <div class="range"></div>
+                <div class="handle" id="handle-a" style="left: 0%"></div>
+                <div class="tooltip tooltip-left" id="tooltip-a">0.00s</div>
+                <div class="handle" id="handle-b" style="left: 100%"></div>
+                <div class="tooltip tooltip-right" id="tooltip-b">100.00s</div>
+            </div>
+        </div>
+        <div class="time-labels">
+            <span id="time-a">--:--s</span>
+            <span id="time-b">--:--s</span>
+        </div>
+
+        <div class="button-container">
+            <button onclick="setABLoop()">Start A-B Loop</button>
+            <button onclick="stopABLoop()">Stop Repeat</button>
+            <button onclick="resetSlider()">Reset</button>
+        </div>
     </div>
 
+    <!-- Custom Range Slider JS -->
     <script>
-        // Fetch track info and update the page
-        fetch('/get_track_info')
-            .then(response => response.json())
-            .then(data => {
-                if (!data.error) {
-                    document.getElementById('track-name').textContent = data.track_name;
-                    document.getElementById('track-duration').textContent = data.track_duration.toFixed(2);
-                    document.getElementById('start-time').setAttribute('max', Math.floor(data.track_duration));
-                    document.getElementById('end-time').setAttribute('max', Math.floor(data.track_duration));
-                }
-            });
+        const slider = document.getElementById('slider');
+        const handleA = document.getElementById('handle-a');
+        const handleB = document.getElementById('handle-b');
+        const range = slider.querySelector('.range');
+        const tooltipA = document.getElementById('tooltip-a');
+        const tooltipB = document.getElementById('tooltip-b');
+        const trackNameEl = document.getElementById('track-name');
+        const trackDurationEl = document.getElementById('track-duration');
+        const timeA = document.getElementById('time-a');
+        const timeB = document.getElementById('time-b');
+    
+        let trackDuration = 100; // Default track duration (for testing)
+    
+        // Set the A-B range from the handles
+        let aValue = 0;
+        let bValue = secondsToTimeFormat(trackDuration);
 
+        function secondsToTimeFormat(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+    
+        function updateSlider() {
+            const rangeWidth = (bValue - aValue) / trackDuration * 100;
+            range.style.left = `${(aValue / trackDuration) * 100}%`;
+            range.style.width = `${rangeWidth}%`;
+    
+            handleA.style.left = `${(aValue / trackDuration) * 100}%`;
+            handleB.style.left = `${(bValue / trackDuration) * 100}%`;
+    
+            timeA.textContent = `${secondsToTimeFormat(0)}`;
+            timeB.textContent = `${secondsToTimeFormat(trackDuration)}`;
+    
+            tooltipA.textContent = `${secondsToTimeFormat(aValue.toFixed(2))}`;
+            tooltipB.textContent = `${secondsToTimeFormat(bValue.toFixed(2))}`;
+    
+            tooltipA.style.left = `${(aValue / trackDuration) * 100 - 3}%`;  // Adjust by 10px (or change this value as needed)
+            tooltipB.style.left = `${(bValue / trackDuration) * 100}%`;
+        }
+    
         function setABLoop() {
-            const startTime = document.getElementById('start-time').value;
-            const endTime = document.getElementById('end-time').value;
-
+            alert(`A-B Loop set from ${aValue.toFixed(2)}s to ${bValue.toFixed(2)}s`);
             fetch('/set_ab_repeat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ start_time: startTime, end_time: endTime })
+                body: JSON.stringify({ start_time: aValue, end_time: bValue })
             })
             .then(response => response.json())
             .then(data => alert(data.status))
             .catch(error => console.error('Error:', error));
         }
-
+    
         function stopABLoop() {
-            fetch('/stop_ab_repeat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => response.json())
-            .then(data => alert(data.status))
-            .catch(error => console.error('Error:', error));
+            // Logic to stop A-B loop
         }
-
-        function resetAB() {
-            fetch('/reset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => response.json())
-            .then(data => alert(data.status))
-            .catch(error => console.error('Error:', error));
+    
+        function resetSlider() {
+            aValue = 0;
+            bValue = trackDuration;
+            updateSlider();
         }
-    </script>
+    
+        // Slider handle movement (dragging)
+        let isDraggingA = false;
+        let isDraggingB = false;
+    
+        handleA.addEventListener('mousedown', (event) => {
+            isDraggingA = true;
+            document.addEventListener('mousemove', onMouseMoveA);
+            document.addEventListener('mouseup', onMouseUpA);
+        });
+    
+        handleB.addEventListener('mousedown', (event) => {
+            isDraggingB = true;
+            document.addEventListener('mousemove', onMouseMoveB);
+            document.addEventListener('mouseup', onMouseUpB);
+        });
+    
+        function onMouseMoveA(event) {
+            const rect = slider.getBoundingClientRect();
+            let newLeft = (event.clientX - rect.left) / rect.width * trackDuration;
+            newLeft = Math.min(Math.max(newLeft, 0), bValue - 2); // Prevent overlap (2 seconds apart)
+            aValue = newLeft;
+            updateSlider();
+        }
+    
+        function onMouseMoveB(event) {
+            const rect = slider.getBoundingClientRect();
+            let newLeft = (event.clientX - rect.left) / rect.width * trackDuration;
+            newLeft = Math.max(Math.min(newLeft, trackDuration), aValue + 2); // Prevent overlap (2 seconds apart)
+            bValue = newLeft;
+            updateSlider();
+        }
+    
+        function onMouseUpA() {
+            isDraggingA = false;
+            document.removeEventListener('mousemove', onMouseMoveA);
+            document.removeEventListener('mouseup', onMouseUpA);
+        }
+    
+        function onMouseUpB() {
+            isDraggingB = false;
+            document.removeEventListener('mousemove', onMouseMoveB);
+            document.removeEventListener('mouseup', onMouseUpB);
+        }
+    
+        // Fetch track information on page load
+        async function fetchTrackInfo() {
+            try {
+                const response = await fetch('/get_track_info');
+                const data = await response.json();
+                if (data.error) {
+                    trackNameEl.textContent = "No track playing";
+                    trackDurationEl.textContent = "0";
+                } else {
+                    trackNameEl.textContent = data.track_name;
+                    trackDurationEl.textContent = data.track_duration.toFixed(2);
+                    trackDuration = data.track_duration;
+                    aValue = 0;
+                    bValue = trackDuration;
+                    updateSlider(); // Ensure initial slider update
+                    timeA.textContent = '00:00'; // Set the start label to 0.00s
+                    timeB.textContent = `${secondsToTimeFormat(trackDuration)}`; // Set the end label to track duration
+                }
+            } catch (error) {
+                console.error('Error fetching track info:', error);
+            }
+        }
+    
+        // Call fetchTrackInfo when page loads
+        window.addEventListener('load', fetchTrackInfo);
+    </script>    
 </body>
 </html>
