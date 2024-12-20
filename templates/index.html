@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spotify A-B Repeat Player</title>
-    <!-- Custom Range Slider CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/sdthornton/slider.css/slider.min.css">
     <style>
         body {
             background-color: #1DB954;
@@ -22,6 +20,7 @@
             background-color: #191414;
             padding: 10px;
             border-radius: 8px;
+
             width: 1500px;
             text-align: center;
         }
@@ -35,6 +34,9 @@
             background: #3A3A3A;
             position: relative;
             border-radius: 8px;
+            background-size: cover; /* Ensure the image covers the entire slider */
+            background-position: center; /* Center the image */
+            background-repeat: no-repeat; /* Prevent the image from repeating */
         }
         .slider .range {
             position: absolute;
@@ -42,22 +44,33 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: #1DB954;
-            border-radius: 8px;
+            background: #1DB954 !important;
+            border-radius: 1px;
         }
         .slider .handle {
             position: absolute;
             top: 0;
-            width: 10px; /* Handle width */
-            height: 120px; /* Handle height */
-            background-color: #FFF;
-            border-radius: 8px;
+            width: 10px; /* Wider for buckle style */
+            height: 120px; /* Same as the slider height */
+            background-color: #1a7ca3; /* Transparent center */
+            border: 2px solid #FFF; /* White border for buckle */
+            border-radius: 4px; /* Rounded corners for buckle */
             cursor: pointer;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-            transition: background-color 0.2s;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5); /* Subtle shadow for depth */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.2s;
         }
         .slider .handle:hover {
-            background-color: #1AA34A;
+            background-color: #1a7ca3;
+        }
+        .current-progress-knob {
+        position: absolute;
+        top: 0;
+        background-color: red;
+        width: 1px; /* Narrow knob */
+        height: 120px; /* Same as the slider height */
         }
         .tooltip {
             position: absolute;
@@ -76,6 +89,16 @@
         }
         .tooltip-right {
             right: -50%; /* Position tooltip to the right of the handle */
+        }
+        .repeat-delay-slider {
+            position: absolute;
+            bottom: 40px;
+            right: 10px;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
         }
         .time-labels {
             display: flex;
@@ -108,6 +131,9 @@
         <h1>Spotify A-B Repeat Player</h1>
         <p>Track: <span id="track-name">Loading...</span></p>
         <p>Duration: <span id="track-duration">0</span> seconds</p>
+        <p>Key: <span id="track-key">Loading...</span></p>
+        <p>Mode: <span id="track-mode">Loading...</span></p>
+        <p>Tempo: <span id="track-tempo">Loading...</span> BPM</p>
 
         <!-- Range Slider -->
         <div class="slider-container">
@@ -117,11 +143,20 @@
                 <div class="tooltip tooltip-left" id="tooltip-a">0.00s</div>
                 <div class="handle" id="handle-b" style="left: 100%"></div>
                 <div class="tooltip tooltip-right" id="tooltip-b">100.00s</div>
+                <div class="handle current-progress-knob" id="current-progress-knob" style="left: 0%; width: 1px; background: red; height: 120px;"></div>
             </div>
         </div>
         <div class="time-labels">
             <span id="time-a">--:--s</span>
             <span id="time-b">--:--s</span>
+        </div>
+        <!-- Repeat Delay Slider -->
+        <div class="repeat-delay-slider">
+            <label for="repeat-delay" style="display: block; color: white; font-size: 16px;">
+                Repeat Delay (%)
+            </label>
+            <input type="range" id="repeat-delay" min="0" max="200" step="1" value="100">
+            <span id="delay-value" style="color: white; font-size: 16px;">100%</span>
         </div>
 
         <div class="button-container">
@@ -143,7 +178,8 @@
         const trackDurationEl = document.getElementById('track-duration');
         const timeA = document.getElementById('time-a');
         const timeB = document.getElementById('time-b');
-    
+        const repeatDelaySlider = document.getElementById('repeat-delay');
+        const delayValueDisplay = document.getElementById('delay-value');
         let trackDuration = 100; // Default track duration (for testing)
     
         // Set the A-B range from the handles
@@ -175,11 +211,16 @@
         }
     
         function setABLoop() {
-            alert(`A-B Loop set from ${aValue.toFixed(2)}s to ${bValue.toFixed(2)}s`);
+            const repeatDelay = parseFloat(repeatDelaySlider.value) / 100; // Convert % to a multiplier
+            alert(`A-B Loop set from ${aValue.toFixed(2)}s to ${bValue.toFixed(2)}s with ${repeatDelay *100}% delay.`);
             fetch('/set_ab_repeat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ start_time: aValue, end_time: bValue })
+                body: JSON.stringify({ 
+                    start_time: aValue, 
+                    end_time: bValue, 
+                    repeat_delay: repeatDelay
+                })
             })
             .then(response => response.json())
             .then(data => alert(data.status))
@@ -187,14 +228,23 @@
         }
     
         function stopABLoop() {
-            // Logic to stop A-B loop
+            fetch('/stop_ab_repeat', methods=['POST'])
+            .then(response => response.json())
+            .then(data => console.log(data))
+            .catch(error => console.error('Error:', error));
+
         }
     
         function resetSlider() {
-            aValue = 0;
-            bValue = trackDuration;
-            updateSlider();
+            fetch('/reset', methods=['POST'])
+            .then(response => response.json())
+            .then(data => console.log(data))
+            .catch(error => console.error('Error:', error));
         }
+
+        repeatDelaySlider.addEventListener('input', () => {
+        delayValueDisplay.textContent = `${repeatDelaySlider.value}%`;
+        });
     
         // Slider handle movement (dragging)
         let isDraggingA = false;
@@ -243,15 +293,43 @@
         // Fetch track information on page load
         async function fetchTrackInfo() {
             try {
+                console.log("fetchTrackInfo Called!")
                 const response = await fetch('/get_track_info');
                 const data = await response.json();
                 if (data.error) {
                     trackNameEl.textContent = "No track playing";
                     trackDurationEl.textContent = "0";
-                } else {
+                    document.getElementById('track-key').textContent = "Unknown";
+                    document.getElementById('track-mode').textContent = "Unknown";
+                    document.getElementById('track-tempo').textContent = "Unknown";
+                } 
+                else {
                     trackNameEl.textContent = data.track_name;
                     trackDurationEl.textContent = data.track_duration.toFixed(2);
                     trackDuration = data.track_duration;
+
+                    // Set album art URL
+                    const albumArtUrl = data.album_art_url;
+                    const img = new Image();
+                    img.crossOrigin = "Anonymous"; // Required for cross-origin images
+                    img.src = albumArtUrl;
+                    console.log('Output fetch_track_info');
+                    img.onload = () => {
+                        const slider = document.getElementById('slider');
+                        slider.style.backgroundImage = `url(${albumArtUrl})`;
+                        slider.style.backgroundSize = 'cover'; // Ensure the image covers the entire slider
+                        slider.style.backgroundPosition = 'center'; // Center the image
+                        slider.style.backgroundRepeat = 'no-repeat'; // Prevent the image from repeating
+                    };
+                    const keyNames = ['C', 'C#/Db', 'D', 'D#/Eb', 'E', 'F', 'F#/Gb', 'G', 'G#/Ab', 'A', 'A#/Bb', 'B'];
+                    const modeNames = ['Minor', 'Major'];
+                    const keyName = keyNames[data.key] || 'Unknown';
+                    const modeName = modeNames[data.mode] || 'Unknown';
+
+                    document.getElementById('track-key').textContent = keyName;
+                    document.getElementById('track-mode').textContent = modeName;
+                    document.getElementById('track-tempo').textContent = data.tempo;
+
                     aValue = 0;
                     bValue = trackDuration;
                     updateSlider(); // Ensure initial slider update
@@ -261,10 +339,30 @@
             } catch (error) {
                 console.error('Error fetching track info:', error);
             }
+        }       
+        async function updateCurrentProgressKnob() {
+            const knob = document.getElementById('current-progress-knob');
+            try {
+                const response = await fetch('/track_progress');
+                const data = await response.json();
+                if (data.progress_ms && trackDuration) {
+                    const progress = data.progress_ms / (trackDuration * 1000) * 100; // Convert ms to percentage
+                    knob.style.left = `${progress}%`;
+                }
+                } catch (error) {
+                    console.error('Error updating progress knob:', error);
+                }
         }
+
+        // Call updateCurrentProgressKnob every second to update the knob position
+        setInterval(updateCurrentProgressKnob, 500);
+        // setInterval(fetchTrackInfo, 5000);
     
         // Call fetchTrackInfo when page loads
         window.addEventListener('load', fetchTrackInfo);
     </script>    
 </body>
+<!-- Footer or About Page linking back to GetSongBPM -->
+<a href="https://getsongbpm.com" target="_blank">Powered by GetSongBPM</a>
+
 </html>
